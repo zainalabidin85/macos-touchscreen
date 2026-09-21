@@ -16,9 +16,10 @@ the top of `touchmouse.swift`; see [Other monitors](#other-monitors).
 |---|---|
 | Tap | Click |
 | Two quick taps | Double-click |
-| Drag one finger | Click-and-drag (after a 12 pt movement threshold) |
-| Hold one finger still for 0.6 s | Right-click |
-| Drag two fingers | Scroll (`--invert-scroll` reverses the direction) |
+| Drag one finger | Scroll, like a phone; a quick flick keeps coasting (`--invert-scroll` reverses the direction) |
+| Hold one finger still for 0.6 s, then move | Click-and-drag (select text, move windows) |
+| Hold one finger still for 0.6 s, then lift | Right-click |
+| Drag two fingers | Scroll (same as one finger) |
 
 No pinch, rotate or other multi-touch gestures.
 
@@ -58,7 +59,7 @@ swiftc -O touchmouse.swift -o touchmouse
 ./touchmouse
 ```
 
-`./package.sh 1.0.0` builds the universal release zip into `dist/`.
+`./package.sh 1.1.0` builds the universal release zip into `dist/`.
 
 ### Options
 
@@ -66,6 +67,7 @@ swiftc -O touchmouse.swift -o touchmouse
 touchmouse --displays          list displays and their indexes
 touchmouse --display N         map touches to display N (default: main display)
 touchmouse --invert-scroll     reverse scroll direction
+touchmouse --scroll-speed X    scroll speed relative to finger movement (default 0.5)
 touchmouse --probe             print raw HID values while you touch (for debugging)
 ```
 

@@ -2,7 +2,7 @@
 //
 //   touchmouse --displays           list displays and their indexes
 //   touchmouse --probe              print raw HID element values while you touch
-//   touchmouse [--display N] [--invert-scroll]
+//   touchmouse [--display N] [--invert-scroll] [--scroll-speed X]
 //       tap = click, double-tap = double-click, drag = drag,
 //       hold still 0.6s = right-click, two-finger drag = scroll
 //
@@ -55,10 +55,11 @@ var contacts: [Int: Contact] = [:]
 
 // Gestures:
 //   one finger, lift          -> click (two quick taps -> double-click)
-//   one finger, move          -> drag
-//   one finger, hold still    -> right-click
+//   one finger, move          -> scroll (flick for momentum)
+//   one finger, hold, move    -> drag (select text, move windows)
+//   one finger, hold, lift    -> right-click
 //   two fingers, move         -> scroll
-enum Mode { case idle, pending, dragging, scrolling, consumed }
+enum Mode { case idle, pending, held, panning, dragging, scrolling, consumed }
 var mode = Mode.idle
 var primaryKey = 0
 var startPoint = CGPoint.zero
@@ -69,9 +70,17 @@ var clickCount: Int64 = 1
 var longPressTimer: Timer?
 var scrollCentroid = CGPoint.zero
 var scrollRemainder = CGPoint.zero
+var panVelocity = CGPoint.zero        // points/second, smoothed
+var lastPanTime = Date()
+var momentumTimer: Timer?
 
 let dragThreshold = 12.0          // points a finger may wander before a tap becomes a drag
 let longPressDelay = 0.6          // seconds
+let momentumFriction = 0.95       // velocity kept per 1/60s frame after a flick
+let scrollGain: Double = {                 // --scroll-speed X (1.0 = finger speed)
+    if let i = args.firstIndex(of: "--scroll-speed"), i + 1 < args.count, let v = Double(args[i + 1]), v > 0 { return v }
+    return 0.5
+}()
 let scrollDirection = args.contains("--invert-scroll") ? -1.0 : 1.0
 
 func point(_ c: Contact) -> CGPoint {
@@ -93,6 +102,40 @@ func centroid(_ fingers: [Contact]) -> CGPoint {
 
 func cancelLongPress() { longPressTimer?.invalidate(); longPressTimer = nil }
 
+func emitScroll(_ dx: Double, _ dy: Double) {
+    let ax = dx * scrollGain + scrollRemainder.x, ay = dy * scrollGain + scrollRemainder.y
+    let ix = ax.rounded(.towardZero), iy = ay.rounded(.towardZero)
+    scrollRemainder = CGPoint(x: ax - ix, y: ay - iy)
+    if ix != 0 || iy != 0,
+       let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+                       wheel1: Int32(iy), wheel2: Int32(ix), wheel3: 0) {
+        e.post(tap: .cghidEventTap)
+    }
+}
+
+func stopMomentum() { momentumTimer?.invalidate(); momentumTimer = nil }
+
+func startMomentum() {
+    stopMomentum()
+    guard hypot(panVelocity.x, panVelocity.y) > 150 else { return }
+    momentumTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { t in
+        panVelocity = CGPoint(x: panVelocity.x * momentumFriction, y: panVelocity.y * momentumFriction)
+        if hypot(panVelocity.x, panVelocity.y) < 20 { t.invalidate(); momentumTimer = nil; return }
+        emitScroll(panVelocity.x / 60, panVelocity.y / 60)
+    }
+}
+
+func beginPan() {
+    cancelLongPress()
+    stopMomentum()
+    mode = .panning
+    scrollRemainder = .zero
+    panVelocity = .zero
+    lastPanTime = Date()
+    lastPoint = startPoint
+    post(.mouseMoved, startPoint)         // scroll events go to whatever is under the cursor
+}
+
 func beginScroll(_ fingers: [Contact]) {
     cancelLongPress()
     mode = .scrolling
@@ -101,9 +144,21 @@ func beginScroll(_ fingers: [Contact]) {
     post(.mouseMoved, scrollCentroid)     // scroll events go to whatever is under the cursor
 }
 
+func panStep(_ p: CGPoint) {
+    let dx = (p.x - lastPoint.x) * scrollDirection, dy = (p.y - lastPoint.y) * scrollDirection
+    let now = Date(), dt = now.timeIntervalSince(lastPanTime)
+    if dt > 0.001 {
+        panVelocity = CGPoint(x: 0.6 * dx / dt + 0.4 * panVelocity.x, y: 0.6 * dy / dt + 0.4 * panVelocity.y)
+        lastPanTime = now
+    }
+    lastPoint = p
+    emitScroll(dx, dy)
+}
+
 func update() {
     let down = contacts.filter { $0.value.tip }
     let fingers = down.map(\.value)
+    if !fingers.isEmpty { stopMomentum() }
 
     switch mode {
     case .idle:
@@ -116,9 +171,7 @@ func update() {
             mode = .pending
             longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDelay, repeats: false) { _ in
                 guard mode == .pending else { return }
-                post(.rightMouseDown, startPoint, button: .right)
-                post(.rightMouseUp, startPoint, button: .right)
-                mode = .consumed
+                mode = .held
             }
         }
     case .pending:
@@ -141,13 +194,37 @@ func update() {
         } else if let c = contacts[primaryKey], c.tip {
             let p = point(c)
             if hypot(p.x - startPoint.x, p.y - startPoint.y) > dragThreshold {
-                cancelLongPress()
+                clickCount = 1
+                beginPan()
+                panStep(p)
+            }
+        }
+    case .held:
+        if fingers.count >= 2 {
+            beginScroll(fingers)
+        } else if fingers.isEmpty {
+            post(.rightMouseDown, startPoint, button: .right)
+            post(.rightMouseUp, startPoint, button: .right)
+            mode = .idle
+        } else if let c = contacts[primaryKey], c.tip {
+            let p = point(c)
+            if hypot(p.x - startPoint.x, p.y - startPoint.y) > dragThreshold {
                 clickCount = 1
                 post(.leftMouseDown, startPoint)
                 post(.leftMouseDragged, p)
                 lastPoint = p
                 mode = .dragging
             }
+        }
+    case .panning:
+        if fingers.count >= 2 {
+            beginScroll(fingers)
+        } else if let c = contacts[primaryKey], c.tip {
+            panStep(point(c))
+        } else {
+            if Date().timeIntervalSince(lastPanTime) > 0.08 { panVelocity = .zero }
+            startMomentum()
+            mode = fingers.isEmpty ? .idle : .consumed
         }
     case .dragging:
         if let c = contacts[primaryKey], c.tip {
@@ -160,16 +237,8 @@ func update() {
     case .scrolling:
         if fingers.count >= 2 {
             let c = centroid(fingers)
-            let dx = (c.x - scrollCentroid.x) * scrollDirection + scrollRemainder.x
-            let dy = (c.y - scrollCentroid.y) * scrollDirection + scrollRemainder.y
-            let ix = dx.rounded(.towardZero), iy = dy.rounded(.towardZero)
-            scrollRemainder = CGPoint(x: dx - ix, y: dy - iy)
+            emitScroll((c.x - scrollCentroid.x) * scrollDirection, (c.y - scrollCentroid.y) * scrollDirection)
             scrollCentroid = c
-            if ix != 0 || iy != 0,
-               let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
-                               wheel1: Int32(iy), wheel2: Int32(ix), wheel3: 0) {
-                e.post(tap: .cghidEventTap)
-            }
         } else {
             mode = fingers.isEmpty ? .idle : .consumed
         }
