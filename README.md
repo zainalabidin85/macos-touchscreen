@@ -22,17 +22,6 @@ the top of `touchmouse.swift`; see [Other monitors](#other-monitors).
 
 No pinch, rotate or other multi-touch gestures.
 
-## Why the screen does nothing on macOS
-
-Two separate problems:
-
-1. **The controller stays silent until the host enables it.** Its HID descriptor has a
-   Device Mode feature report (report ID 7, usages 0x52/0x53). Windows sets it
-   automatically; macOS never does, so no touch reports are sent at all. `touchmouse`
-   writes `[7, 2, 0]` (multi-input mode) at startup, and again after wake or replug.
-2. **Even with reports flowing, macOS ignores them.** The controller shows up as a
-   digitizer (usage page 0x0D, usage 4), but nothing turns that into pointer events.
-   `touchmouse` reads the finger contacts (tip switch, X, Y) and posts mouse events.
 
 ## Install
 
