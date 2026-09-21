@@ -1,0 +1,12 @@
+# build output
+/touchmouse
+/touchmouse.new
+/desc
+/diag
+/mode
+/perm
+/tools/*
+!/tools/*.swift
+# logs and backups
+*.log
+*.bak
