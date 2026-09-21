@@ -34,16 +34,44 @@ Two separate problems:
    digitizer (usage page 0x0D, usage 4), but nothing turns that into pointer events.
    `touchmouse` reads the finger contacts (tip switch, X, Y) and posts mouse events.
 
-## Build and run
+## Install
 
-Requires the Xcode command line tools (`xcode-select --install`).
+### From a release (no Xcode needed)
+
+1. Download `touchmouse-vX.Y.Z-macos.zip` from the
+   [Releases page](https://github.com/zainalabidin85/macos-touchscreen/releases) and unzip it.
+   It is a universal binary for Apple Silicon and Intel Macs, macOS 13 or later.
+2. In Terminal, run the installer from the unzipped folder:
+   ```sh
+   ./install.sh
+   ```
+3. Grant permissions (see below), then restart it:
+   ```sh
+   launchctl kickstart -k gui/$(id -u)/com.touchmouse
+   ```
+
+The installer copies the binary to `~/Library/Application Support/touchmouse/`, removes the
+download quarantine flag, and installs a LaunchAgent so it starts at every login.
+The binary is ad-hoc signed, not notarized (no Apple Developer account), so macOS may refuse
+to open it if you double-click it. Running `./install.sh` from Terminal avoids that.
+
+Remove everything with `./install.sh --uninstall`.
+
+### From source
+
+Building needs only the **Xcode Command Line Tools** (`xcode-select --install`, about 1 GB),
+not the full Xcode app.
 
 ```sh
+./install.sh                       # build, install and start at login
+# or just build and run once:
 swiftc -O touchmouse.swift -o touchmouse
 ./touchmouse
 ```
 
-Options:
+`./package.sh 1.0.0` builds the universal release zip into `dist/`.
+
+### Options
 
 ```
 touchmouse --displays          list displays and their indexes
@@ -52,6 +80,9 @@ touchmouse --invert-scroll     reverse scroll direction
 touchmouse --probe             print raw HID values while you touch (for debugging)
 ```
 
+To pass options at login, add them to `ProgramArguments` in
+`~/Library/LaunchAgents/com.touchmouse.plist` and restart the agent.
+
 ## Permissions
 
 macOS needs two permissions for whichever app launches the tool:
@@ -59,26 +90,14 @@ macOS needs two permissions for whichever app launches the tool:
 - **Input Monitoring** to read the touch controller.
 - **Accessibility** to post mouse events.
 
-Both are under System Settings > Privacy & Security. When run from a terminal, grant them
-to that terminal app (then restart it).
+Under System Settings > Privacy & Security, click **+**, press Cmd+Shift+G and add:
 
-## Start at login
+- the login item: `~/Library/Application Support/touchmouse/touchmouse`
+- or, when running by hand, the terminal app you launch it from (then restart that terminal).
 
-```sh
-./install.sh
-```
-
-This builds and ad-hoc signs the binary, and installs a LaunchAgent
-(`~/Library/LaunchAgents/com.touchmouse.plist`). When launchd starts it, the binary itself
-is the app macOS checks, so add `touchmouse` to **both** privacy panes (click **+**, press
-Cmd+Shift+G, paste the path printed by the script), then restart it:
-
-```sh
-launchctl kickstart -k gui/$(id -u)/com.touchmouse
-```
-
-The permissions are tied to the signed binary, so rebuilding it means adding it again.
-Remove everything with `./install.sh --uninstall`. Logs go to `agent.log`.
+The permissions are tied to the signed binary, so after updating it you may need to remove
+the `touchmouse` entry (**−**) and add it again. Logs are in
+`~/Library/Application Support/touchmouse/touchmouse.log`.
 
 ## Other monitors
 
@@ -98,7 +117,8 @@ need the mode report; it's harmless to leave in, but check that the write doesn'
 ## Files
 
 - `touchmouse.swift` — the tool
-- `install.sh` — build, sign and install the LaunchAgent
+- `install.sh` — install (prebuilt or built from source) and set up the LaunchAgent
+- `package.sh` — build the universal release zip
 - `tools/` — small diagnostics used to work this out (`desc`, `diag`, `mode`, `perm`)
 
 ## License

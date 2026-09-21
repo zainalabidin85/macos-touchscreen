@@ -10,3 +10,4 @@
 # logs and backups
 *.log
 *.bak
+/dist
