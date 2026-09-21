@@ -28,7 +28,7 @@ No pinch, rotate or other multi-touch gestures.
 
 ### From a release (no Xcode needed)
 
-1. Download `touchmouse-vX.Y.Z-macos.zip` from the
+1. Download `touchmouse-v1.1.0-macos.zip` from the
    [Releases page](https://github.com/zainalabidin85/macos-touchscreen/releases) and unzip it.
    It is a universal binary for Apple Silicon and Intel Macs, macOS 13 or later.
 2. In Terminal, run the installer from the unzipped folder:
