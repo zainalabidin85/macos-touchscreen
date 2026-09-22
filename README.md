@@ -1,6 +1,6 @@
 # macos-touchscreen
 
-Make a USB touchscreen monitor work on macOS when it does nothing out of the box.
+Make a touchscreen monitor work on macOS when it does nothing out of the box.
 
 macOS has no touch input pipeline for external HID touchscreens. This small Swift tool
 reads the touch controller directly and turns touches into mouse events.
