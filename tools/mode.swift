@@ -3,7 +3,7 @@ import Foundation
 setvbuf(stdout, nil, _IONBF, 0)
 let mode = UInt8(CommandLine.arguments.count > 1 ? Int(CommandLine.arguments[1]) ?? 2 : 2)
 let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey: 8146, kIOHIDProductIDKey: 24835, kIOHIDPrimaryUsagePageKey: 13] as CFDictionary)
+IOHIDManagerSetDeviceMatching(m, [kIOHIDDeviceUsagePageKey: 0x0d, kIOHIDDeviceUsageKey: 0x04] as CFDictionary)
 IOHIDManagerOpen(m, 0)
 guard let d = (IOHIDManagerCopyDevices(m) as? Set<IOHIDDevice>)?.first else { print("no digitizer"); exit(1) }
 

@@ -1,4 +1,5 @@
-// touchmouse: turn a HID touchscreen (LGD AIT / Melfas) into mouse input on macOS.
+// touchmouse: turn any HID touchscreen into mouse input on macOS.
+// The touchscreen is found automatically (HID Digitizer page, Touch Screen usage).
 //
 //   touchmouse --displays           list displays and their indexes
 //   touchmouse --probe              print raw HID element values while you touch
@@ -10,9 +11,6 @@
 
 import Cocoa
 import IOKit.hid
-
-let vendorID = 8146
-let productID = 24835
 
 setvbuf(stdout, nil, _IONBF, 0)
 let args = CommandLine.arguments
@@ -287,29 +285,47 @@ if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted {
 }
 
 let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: vendorID, kIOHIDProductIDKey: productID] as CFDictionary)
+IOHIDManagerSetDeviceMatching(manager, [kIOHIDDeviceUsagePageKey: 0x0d, kIOHIDDeviceUsageKey: 0x04] as CFDictionary)
 IOHIDManagerRegisterInputValueCallback(manager, callback, nil)
 
-// The controller stays silent until the host sets its Device Mode feature report (ID 7),
-// which Windows does automatically. Mode 2 = multi-input.
-var touchDevice: IOHIDDevice?
-func enableTouchMode() {
-    guard let device = touchDevice else { return }
-    var report: [UInt8] = [7, 2, 0]
-    let r = IOHIDDeviceSetReport(device, kIOHIDReportTypeFeature, 7, &report, report.count)
-    print(r == kIOReturnSuccess ? "Touch enabled." : "Failed to enable touch (0x\(String(r, radix: 16))).")
+// Many controllers stay silent until the host sets the Device Mode feature (0x0D/0x52)
+// to 2 = multi-input, which Windows does automatically.
+var touchDevices: [IOHIDDevice] = []
+func describe(_ device: IOHIDDevice) -> String {
+    let name = IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String ?? "touchscreen"
+    let vid = IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? Int ?? 0
+    let pid = IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? Int ?? 0
+    return "\(name) (\(String(format: "%04x:%04x", vid, pid)))"
 }
-let enableTouch: IOHIDDeviceCallback = { _, _, _, device in
-    let page = IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsagePageKey as CFString) as? Int
-    guard page == 0x0d else { return }
-    touchDevice = device
-    enableTouchMode()
+func enableTouchMode(_ device: IOHIDDevice) {
+    let match = [kIOHIDElementUsagePageKey: 0x0d, kIOHIDElementUsageKey: 0x52] as CFDictionary
+    let modes = (IOHIDDeviceCopyMatchingElements(device, match, 0) as? [IOHIDElement] ?? [])
+        .filter { IOHIDElementGetType($0) == kIOHIDElementTypeFeature }
+    guard !modes.isEmpty else {
+        print("\(describe(device)): no Device Mode feature, assuming touch is already on.")
+        return
+    }
+    for el in modes {
+        let value = IOHIDValueCreateWithIntegerValue(kCFAllocatorDefault, el, 0, 2)
+        let r = IOHIDDeviceSetValue(device, el, value)
+        print(r == kIOReturnSuccess ? "\(describe(device)): touch enabled."
+                                    : "\(describe(device)): failed to enable touch (0x\(String(r, radix: 16))).")
+    }
+}
+let deviceAdded: IOHIDDeviceCallback = { _, _, _, device in
+    touchDevices.append(device)
+    enableTouchMode(device)
+}
+let deviceRemoved: IOHIDDeviceCallback = { _, _, _, device in
+    touchDevices.removeAll { $0 == device }
+    print("\(describe(device)): disconnected.")
 }
 NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
     // The monitor may have dropped its mode while asleep.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { enableTouchMode() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { touchDevices.forEach(enableTouchMode) }
 }
-IOHIDManagerRegisterDeviceMatchingCallback(manager, enableTouch, nil)
+IOHIDManagerRegisterDeviceMatchingCallback(manager, deviceAdded, nil)
+IOHIDManagerRegisterDeviceRemovalCallback(manager, deviceRemoved, nil)
 IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
 let openResult = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
 guard openResult == kIOReturnSuccess else {
@@ -320,6 +336,7 @@ guard openResult == kIOReturnSuccess else {
 if !probe && !AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary) {
     print("Warning: Accessibility permission not granted; clicks will not be posted. Enable it for this terminal in System Settings > Privacy & Security > Accessibility.")
 }
+if (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> ?? []).isEmpty { print("No touchscreen found yet; waiting for one to be connected...") }
 print(probe ? "Probing touch input. Touch the screen (Ctrl-C to stop)..."
             : "Running on display [\(displayIndex)]. Ctrl-C to stop.")
 CFRunLoopRun()

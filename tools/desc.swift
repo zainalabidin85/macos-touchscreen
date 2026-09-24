@@ -1,7 +1,7 @@
 import IOKit.hid
 import Foundation
 let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey: 8146, kIOHIDProductIDKey: 24835] as CFDictionary)
+IOHIDManagerSetDeviceMatching(m, [kIOHIDDeviceUsagePageKey: 0x0d, kIOHIDDeviceUsageKey: 0x04] as CFDictionary)
 IOHIDManagerOpen(m, 0)
 for d in (IOHIDManagerCopyDevices(m) as? Set<IOHIDDevice>) ?? [] {
     func p(_ k: String) -> String { "\(IOHIDDeviceGetProperty(d, k as CFString) ?? "?" as CFTypeRef)" }

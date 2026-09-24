@@ -6,9 +6,9 @@ macOS has no touch input pipeline for external HID touchscreens. This small Swif
 reads the touch controller directly and turns touches into mouse events.
 
 Developed and tested on an LG monitor with an **LGD AIT Touch Controller** (Melfas,
-USB `1fd2:6103`) on an Apple Silicon Mac mini running macOS 26. Other monitors that use
-the same Windows Precision Touch style HID layout may work after changing the two IDs at
-the top of `touchmouse.swift`; see [Other monitors](#other-monitors).
+USB `1fd2:6103`) on an Apple Silicon Mac mini running macOS 26. There are no IDs to
+configure: the tool finds any connected HID touchscreen by itself, so other monitors that
+use the standard Windows touch HID layout should work too; see [Other monitors](#other-monitors).
 
 ## Gestures
 
@@ -28,7 +28,7 @@ No pinch, rotate or other multi-touch gestures.
 
 ### From a release (no Xcode needed)
 
-1. Download `touchmouse-v1.1.0-macos.zip` from the
+1. Download `touchmouse-v1.2.0-macos.zip` from the
    [Releases page](https://github.com/zainalabidin85/macos-touchscreen/releases) and unzip it.
    It is a universal binary for Apple Silicon and Intel Macs, macOS 13 or later.
 2. In Terminal, run the installer from the unzipped folder:
@@ -59,7 +59,7 @@ swiftc -O touchmouse.swift -o touchmouse
 ./touchmouse
 ```
 
-`./package.sh 1.1.0` builds the universal release zip into `dist/`.
+`./package.sh 1.2.0` builds the universal release zip into `dist/`.
 
 ### Options
 
@@ -92,18 +92,20 @@ the `touchmouse` entry (**−**) and add it again. Logs are in
 
 ## Other monitors
 
-1. Find the controller's IDs: `system_profiler SPUSBDataType` or
-   `ioreg -p IOUSB -l | grep -B2 -A10 -i touch`. Convert vendor/product IDs to decimal.
-2. Set `vendorID` and `productID` at the top of `touchmouse.swift`.
-3. Dump the report descriptor with `tools/desc.swift`. `touchmouse` expects a digitizer
-   with per-finger collections containing Tip Switch (0x0D/0x42) and X/Y (0x01/0x30, 0x31).
-   If the descriptor has a Device Mode feature report, try other values than 2 in
-   `enableTouchMode()`.
-4. `tools/mode.swift <mode>` sets the mode and prints raw reports, and `--probe` shows
-   parsed values, which is how you check that touches arrive at all.
+Nothing needs configuring. At startup (and whenever a touchscreen is plugged in),
+`touchmouse` finds every HID device that reports itself as a touch screen (Digitizer usage
+page 0x0D, usage 0x04) and prints its name and `vendor:product` IDs. If the device has
+the standard Device Mode feature (0x0D/0x52), it's set to 2 (multi-input), which is what
+Windows does and what wakes up controllers that stay silent on macOS. Controllers without
+it are used as they are.
 
-Controllers that already send touch reports on macOS just need Input Monitoring and won't
-need the mode report; it's harmless to leave in, but check that the write doesn't fail.
+If touches still don't work:
+
+1. Run `touchmouse --probe` and touch the screen. No output means no touch data arrives;
+   no "touch enabled" line means the screen wasn't recognised as a touchscreen.
+2. Dump the report descriptor with `tools/desc.swift`. `touchmouse` expects a digitizer
+   with per-finger collections containing Tip Switch (0x0D/0x42) and X/Y (0x01/0x30, 0x31).
+3. `tools/mode.swift <mode>` sets the Device Mode by hand and prints raw reports.
 
 ## Files
 
